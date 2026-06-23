@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+  <title>SecondSight</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0a0a0a; color:#fff; font-family:monospace; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+
+    /* ── Setup Screen ── */
+    #setupScreen {
+      position:fixed; top:0; left:0; right:0; bottom:0;
+      background:#0a0a0a; display:flex; flex-direction:column;
+      align-items:center; justify-content:flex-start;
+      z-index:100; padding:30px 20px; overflow-y:auto;
+    }
+    .app-title { font-size:32px; font-weight:bold; color:#2E75B6; margin-bottom:4px; margin-top:20px; }
+    .app-sub   { font-size:11px; color:#444; margin-bottom:32px; }
+
+    .input-block {
+      width:100%; max-width:340px; margin-bottom:20px;
+      background:#111; border:1px solid #222; border-radius:12px; padding:16px;
+    }
+    .input-label { font-size:11px; color:#555; margin-bottom:8px; }
+    .input-value {
+      font-size:15px; color:#facc15; min-height:24px;
+      margin-bottom:12px; word-break:break-word;
+    }
+    .input-value.confirmed { color:#22c55e; }
+    .mic-btn {
+      width:100%; padding:12px; border-radius:8px; border:none;
+      font-size:13px; font-family:monospace; cursor:pointer;
+      display:flex; align-items:center; justify-content:center; gap:8px;
+      transition:background 0.2s;
+    }
+    .mic-btn.idle     { background:#1a1a1a; color:#888; border:1px solid #333; }
+    .mic-btn.listening{ background:#1a3a6b; color:#60a5fa; border:1px solid #2E75B6; }
+    .mic-btn.done     { background:#0a2a0a; color:#22c55e; border:1px solid #22c55e; }
+    .mic-icon { font-size:18px; }
+
+    .route-preview {
+      width:100%; max-width:340px; margin-bottom:20px;
+      background:#111; border:1px solid #1a4a1a; border-radius:12px;
+      padding:16px; display:none;
+    }
+    .route-title { font-size:11px; color:#22c55e; margin-bottom:10px; }
+    .route-stop  { font-size:11px; color:#666; line-height:2; }
+    .route-stop.first { color:#22c55e; }
+    .route-stop.last  { color:#ef4444; }
+
+    .start-btn {
+      width:100%; max-width:340px; padding:16px; border-radius:10px;
+      border:none; background:#1F4E79; color:#fff; font-size:15px;
+      font-family:monospace; cursor:pointer; display:none;
+      font-weight:bold;
+    }
+    .start-btn:active { background:#2E75B6; }
+
+    /* ── Camera View ── */
+    #checkpointStrip {
+      background:#111; border-bottom:1px solid #222;
+      padding:6px 10px; display:flex; align-items:center;
+      overflow-x:auto; min-height:36px; flex-shrink:0;
+      gap:6px; scrollbar-width:none;
+    }
+    #checkpointStrip::-webkit-scrollbar { display:none; }
+    #cameraWrap { position:relative; flex:1; background:#000; overflow:hidden; }
+    #video  { width:100%; height:100%; object-fit:cover; display:block; }
+    #canvas { visibility:hidden; position:absolute; top:0; left:0; width:1px; height:1px; }
+    #statusOverlay {
+      position:absolute; top:10px; left:10px; right:10px;
+      display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none;
+    }
+    #instruction {
+      background:rgba(0,0,0,0.75); border-radius:8px;
+      padding:8px 14px; font-size:18px; font-weight:bold; color:#22c55e; max-width:75%;
+    }
+    #fpsTag { background:rgba(0,0,0,0.6); border-radius:6px; padding:4px 8px; font-size:11px; color:#888; }
+    #deviationWrap { background:#111; border-top:1px solid #1a1a1a; padding:8px 12px; flex-shrink:0; }
+    #deviationLabel { font-size:10px; color:#555; text-align:center; margin-bottom:4px; }
+    #deviationTrack { position:relative; height:10px; background:#1a1a1a; border-radius:5px; overflow:hidden; }
+    #deviationCenter { position:absolute; left:50%; top:0; width:2px; height:100%; background:#333; transform:translateX(-50%); }
+    #deviationFill   { position:absolute; height:100%; background:#22c55e; transition:all 0.1s ease; top:0; left:50%; width:0; }
+    #deviationValue  { font-size:10px; color:#444; text-align:center; margin-top:3px; }
+    .cp-btn      { background:#1a1a1a; border:1px solid #333; color:#aaa; padding:4px 10px; border-radius:12px; font-size:11px; font-family:monospace; cursor:pointer; white-space:nowrap; flex-shrink:0; }
+    .cp-done     { color:#22c55e; border-color:#22c55e; }
+    .cp-current  { color:#facc15; border-color:#facc15; background:#1a1500; }
+    .cp-upcoming { color:#555; border-color:#333; }
+
+    /* ── Compass + Distance Panel ── */
+    #navPanel {
+      display:none; position:absolute; top:8px; right:10px;
+      background:rgba(10,10,10,0.82);
+      backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px);
+      border:1px solid rgba(255,255,255,0.08);
+      border-radius:16px; padding:12px 10px 10px;
+      width:110px; flex-direction:column; align-items:center;
+      z-index:10; box-shadow:0 4px 24px rgba(0,0,0,0.6);
+    }
+    #navPanelLabel {
+      font-size:9px; color:#555; letter-spacing:0.08em;
+      text-transform:uppercase; margin-bottom:8px;
+    }
+    #compassWrap {
+      width:84px; height:84px; position:relative;
+      display:flex; align-items:center; justify-content:center;
+    }
+    #compassRing {
+      width:84px; height:84px; border-radius:50%;
+      border:1.5px solid rgba(255,255,255,0.12);
+      background:radial-gradient(circle at 50% 50%, rgba(46,117,182,0.08), transparent 70%);
+      position:absolute;
+    }
+    /* tick marks */
+    #compassRing::before {
+      content:''; position:absolute; inset:4px; border-radius:50%;
+      border:1px dashed rgba(255,255,255,0.06);
+    }
+    /* Cardinal labels */
+    #compassN, #compassS, #compassE, #compassW {
+      position:absolute; font-size:9px; font-weight:bold;
+      line-height:1; pointer-events:none;
+    }
+    #compassN { top:3px;  left:50%; transform:translateX(-50%); color:#ef4444; }
+    #compassS { bottom:3px; left:50%; transform:translateX(-50%); color:#666; }
+    #compassE { right:4px; top:50%; transform:translateY(-50%); color:#666; }
+    #compassW { left:4px;  top:50%; transform:translateY(-50%); color:#666; }
+    /* Two-toned arrow: red tip (north) + white body (south) */
+    #compassArrow {
+      position:absolute; width:4px; height:44px;
+      transform-origin:center center;
+      transition:transform 0.35s cubic-bezier(.4,0,.2,1);
+      display:flex; flex-direction:column; align-items:center;
+      top:50%; left:50%; margin-top:-22px; margin-left:-2px;
+    }
+    #compassArrowN {
+      width:0; height:0;
+      border-left:5px solid transparent;
+      border-right:5px solid transparent;
+      border-bottom:22px solid #ef4444;
+      margin-left:-3px;
+    }
+    #compassArrowS {
+      width:0; height:0;
+      border-left:5px solid transparent;
+      border-right:5px solid transparent;
+      border-top:22px solid rgba(255,255,255,0.25);
+      margin-left:-3px;
+    }
+    /* center dot */
+    #compassDot {
+      position:absolute; width:6px; height:6px;
+      border-radius:50%; background:#2E75B6;
+      border:1px solid #fff;
+    }
+    #distanceText {
+      font-size:20px; font-weight:bold; color:#facc15;
+      margin-top:10px; text-align:center; letter-spacing:-0.5px;
+      line-height:1;
+    }
+    #distanceUnit {
+      font-size:10px; color:#888; margin-top:2px;
+    }
+    #distanceDivider {
+      width:60%; height:1px; background:rgba(255,255,255,0.07);
+      margin:7px 0;
+    }
+    #nextCpName {
+      font-size:9px; color:#aaa; text-align:center;
+      word-break:break-word; line-height:1.3; padding:0 4px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── SETUP SCREEN ── -->
+<div id="setupScreen">
+  <div class="app-title">SecondSight</div>
+  <div class="app-sub">Vision-Based Campus Navigation</div>
+
+  <!-- Source block -->
+  <div class="input-block">
+    <div class="input-label">YOUR CURRENT LOCATION</div>
+    <div class="input-value" id="srcDisplay">Not set</div>
+    <button class="mic-btn idle" id="srcMicBtn" onclick="startListenSource()">
+      <span class="mic-icon">🎤</span> Tap to say your location
+    </button>
+  </div>
+
+  <!-- Destination block -->
+  <div class="input-block">
+    <div class="input-label">WHERE DO YOU WANT TO GO</div>
+    <div class="input-value" id="dstDisplay">Not set</div>
+    <button class="mic-btn idle" id="dstMicBtn" onclick="startListenDest()">
+      <span class="mic-icon">🎤</span> Tap to say destination
+    </button>
+  </div>
+
+  <!-- Route preview -->
+  <div class="route-preview" id="routePreview">
+    <div class="route-title" id="routeTitle">Route</div>
+    <div id="routeStops"></div>
+  </div>
+
+  <!-- Start button -->
+  <button class="start-btn" id="startBtn" onclick="confirmAndStart()">
+    ▶ Start Navigation
+  </button>
+</div>
+
+<!-- ── CAMERA VIEW (hidden until route confirmed) ── -->
+<div id="checkpointStrip" style="display:none;">
+  <span id="stripPlaceholder" style="color:#555;font-size:11px;">Loading...</span>
+</div>
+<div id="cameraWrap" style="display:none;">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas"></canvas>
+  <div id="statusOverlay">
+    <div id="instruction">Starting...</div>
+    <div id="fpsTag">-- FPS</div>
+  </div>
+  <!-- Compass + distance panel -->
+  <div id="navPanel">
+    <div id="navPanelLabel">NEXT STOP</div>
+    <div id="compassWrap">
+      <div id="compassRing"></div>
+      <span id="compassN">N</span>
+      <span id="compassS">S</span>
+      <span id="compassE">E</span>
+      <span id="compassW">W</span>
+      <div id="compassArrow">
+        <div id="compassArrowN"></div>
+        <div id="compassArrowS"></div>
+      </div>
+      <div id="compassDot"></div>
+    </div>
+    <div id="distanceText">--</div>
+    <div id="distanceUnit">metres away</div>
+    <div id="distanceDivider"></div>
+    <div id="nextCpName">--</div>
+    <div id="debugBearing" style="font-size:7px;color:#444;margin-top:2px;"></div>
+  </div>
+</div>
+<div id="deviationWrap" style="display:none;">
+  <div id="deviationLabel">PATH DEVIATION</div>
+  <div id="deviationTrack">
+    <div id="deviationCenter"></div>
+    <div id="deviationFill"></div>
+  </div>
+  <div id="deviationValue">0.000</div>
+</div>
+
+<script>
+// ── Config ─────────────────────────────────────────────────
+let API_URL = 'http://localhost:8000';
+
+const FPS      = 10;
+const INTERVAL = 1000 / FPS;
+
+// ── State ──────────────────────────────────────────────────
+let lastSpoken      = '';
+let lastSpokenTime  = 0;
+let frameId         = 0;
+let lastFrameTime   = Date.now();
+let capturing       = false;
+let destinations    = [];
+let allCheckpoints  = [];
+let selectedSource  = null;
+let selectedDest    = null;
+let routeData       = null;
+let locationWatchId  = null;
+let deviceBearing   = 0;   // phone compass heading
+let targetBearing   = 0;   // bearing to next checkpoint
+let distToNext      = 0;
+let vibrationUnlocked = false;
+
+// ── DOM ────────────────────────────────────────────────────
+const video        = document.getElementById('video');
+const canvas       = document.getElementById('canvas');
+const ctx          = canvas.getContext('2d');
+const instrEl      = document.getElementById('instruction');
+const fpsEl        = document.getElementById('fpsTag');
+const deviationFill= document.getElementById('deviationFill');
+const deviationVal = document.getElementById('deviationValue');
+
+// ── Unlock vibration on first tap ──────────────────────────
+document.addEventListener('touchstart', function unlock() {
+  if ('vibrate' in navigator) { navigator.vibrate([50,50,50]); vibrationUnlocked = true; }
+  document.removeEventListener('touchstart', unlock);
+}, { once:true });
+document.addEventListener('click', function unlockC() {
+  if ('vibrate' in navigator && !vibrationUnlocked) { navigator.vibrate([50,50,50]); vibrationUnlocked = true; }
+  document.removeEventListener('click', unlockC);
+}, { once:true });
+
+// ── Voice ──────────────────────────────────────────────────
+const COOLDOWN_NEW = 5000, COOLDOWN_REPEAT = 6000;
+const SILENT = ['continue straight'];
+
+function shouldAnnounce(text) {
+  const now = Date.now();
+  if (SILENT.includes(text.toLowerCase().trim())) return false;
+  const cd = text !== lastSpoken ? COOLDOWN_NEW : COOLDOWN_REPEAT;
+  return (now - lastSpokenTime) >= cd;
+}
+function speak(text) {
+  if (!text) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-IN'; u.rate = 0.95;
+  window.speechSynthesis.speak(u);
+  lastSpoken = text; lastSpokenTime = Date.now();
+}
+function speakForce(text) {
+  if (!text) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-IN'; u.rate = 0.95;
+  window.speechSynthesis.speak(u);
+  lastSpoken = text; lastSpokenTime = Date.now();
+}
+
+// ── Vibration ──────────────────────────────────────────────
+function vibrate(vibration, laneDetected, willBlock) {
+  if (!('vibrate' in navigator) || !vibrationUnlocked) return;
+  if (!laneDetected)   { navigator.vibrate([200,100,200,100,200]); return; }
+  if (willBlock)       { navigator.vibrate([300,100,300]); return; }
+  if (vibration > 0)   { const ms = Math.round(vibration*80); if (ms>0) navigator.vibrate(ms); }
+}
+
+// ── Speech Recognition helper ──────────────────────────────
+function listenOnce(onResult, onError) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { onError('not_supported'); return; }
+  const r = new SR();
+  r.lang = 'en-IN'; r.interimResults = false; r.maxAlternatives = 3;
+  r.onresult = (e) => {
+    const results = Array.from(e.results[0]).map(x => x.transcript.toLowerCase().trim());
+    onResult(results);
+  };
+  r.onerror = (e) => onError(e.error);
+  r.onend   = () => {};
+  try { r.start(); } catch(e) { onError(e.message); }
+}
+
+// ── Match checkpoint ───────────────────────────────────────
+function norm(text) {
+  return text.toLowerCase()
+    .replace(/\bhostel\b/g,'').replace(/\bcrossing\b/g,'')
+    .replace(/\blecture\b/g,'').replace(/\btheatre\b/g,'')
+    .replace(/\bbhawan\b/g,'').replace(/\bshop\b/g,'')
+    .replace(/[^a-z0-9]/g,'').trim();
+}
+function numWords(text) {
+  return text
+    .replace(/\bone\b/g,'1').replace(/\btwo\b/g,'2').replace(/\bthree\b/g,'3')
+    .replace(/\bfour\b/g,'4').replace(/\bfive\b/g,'5').replace(/\bsix\b/g,'6')
+    .replace(/\bseven\b/g,'7').replace(/\beight\b/g,'8').replace(/\bnine\b/g,'9')
+    .replace(/\bten\b/g,'10');
+}
+function matchCheckpoint(spokenList, list) {
+  for (let spoken of spokenList) {
+    spoken = numWords(spoken);
+    const sn = norm(spoken);
+    console.log('Matching:', spoken, '→ norm:', sn, '| list size:', list.length);
+    for (const cp of list) {
+      const idn   = norm(cp.id);
+      const namen = norm(cp.name);
+      if (sn === idn || sn === namen)                          { console.log('EXACT:',cp.id); return cp; }
+      if (sn.includes(idn) && idn.length > 1)                 { console.log('CONTAINS ID:',cp.id); return cp; }
+      if (idn.includes(sn) && sn.length > 1)                  { console.log('ID CONTAINS:',cp.id); return cp; }
+      if (namen.includes(sn) && sn.length > 2)                { console.log('NAME HAS:',cp.id); return cp; }
+      if (sn.includes(namen) && namen.length > 2)             { console.log('HAS NAME:',cp.id); return cp; }
+      const sw = spoken.split(' ').filter(w => w.length > 1);
+      const nw = cp.name.toLowerCase().split(/[\s\/\-_]+/);
+      for (const w of sw) for (const n of nw) {
+        if (w===n||(w.length>2&&(w.includes(n)||n.includes(w)))) { console.log('WORD:',w,'=',n,'→',cp.id); return cp; }
+      }
+    }
+  }
+  console.log('NO MATCH:', spokenList);
+  return null;
+}
+// ── Source mic button ──────────────────────────────────────
+function startListenSource() {
+  const btn = document.getElementById('srcMicBtn');
+  const disp = document.getElementById('srcDisplay');
+  btn.className = 'mic-btn listening';
+  btn.innerHTML = '<span class="mic-icon">🔴</span> Listening...';
+  disp.textContent = '...';
+  disp.className = 'input-value';
+
+  speakForce('Say your current location.');
+
+  setTimeout(() => {
+    listenOnce(
+      (results) => {
+        // Debug — show exactly what was heard
+        console.log('SOURCE HEARD:', results);
+        console.log('CHECKPOINTS LOADED:', allCheckpoints.length);
+        disp.textContent = 'You said: "' + results[0] + '"';
+
+        const matched = matchCheckpoint(results, allCheckpoints);
+        console.log('MATCHED:', matched);
+
+        if (matched) {
+          selectedSource = matched;
+          disp.textContent = '✅ ' + matched.name;
+          disp.className = 'input-value confirmed';
+          btn.className = 'mic-btn done';
+          btn.innerHTML = '<span class="mic-icon">✅</span> ' + matched.name + ' — Tap to change';
+          speakForce('Location set to ' + matched.name);
+          checkBothSet();
+        } else {
+          disp.textContent = 'You said: "' + results[0] + '" — not found. Checkpoints loaded: ' + allCheckpoints.length;
+          disp.className = 'input-value';
+          btn.className = 'mic-btn idle';
+          btn.innerHTML = '<span class="mic-icon">🎤</span> Tap to try again';
+          speakForce('Location not found. Please tap and try again.');
+        }
+      },
+      (err) => {
+        disp.textContent = 'Mic error: ' + err + ' — tap to retry';
+        btn.className = 'mic-btn idle';
+        btn.innerHTML = '<span class="mic-icon">🎤</span> Tap to try again';
+      }
+    );
+  }, 1200);
+}
+
+// ── Destination mic button ─────────────────────────────────
+function startListenDest() {
+  const btn  = document.getElementById('dstMicBtn');
+  const disp = document.getElementById('dstDisplay');
+  btn.className = 'mic-btn listening';
+  btn.innerHTML = '<span class="mic-icon">🔴</span> Listening...';
+  disp.textContent = '...';
+  disp.className = 'input-value';
+
+  speakForce('Say your destination.');
+
+  setTimeout(() => {
+    listenOnce(
+      (results) => {
+        const matched = matchCheckpoint(results, destinations);
+        if (matched) {
+          selectedDest = matched;
+          disp.textContent = '✅ ' + matched.name;
+          disp.className = 'input-value confirmed';
+          btn.className = 'mic-btn done';
+          btn.innerHTML = '<span class="mic-icon">✅</span> ' + matched.name + ' — Tap to change';
+          speakForce('Destination set to ' + matched.name);
+          checkBothSet();
+        } else {
+          disp.textContent = 'You said: "' + results[0] + '" — not found, tap to retry';
+          disp.className = 'input-value';
+          btn.className = 'mic-btn idle';
+          btn.innerHTML = '<span class="mic-icon">🎤</span> Tap to try again';
+          speakForce('Destination not found. Please tap and try again.');
+        }
+      },
+      (err) => {
+        disp.textContent = 'Mic error: ' + err + ' — tap to retry';
+        btn.className = 'mic-btn idle';
+        btn.innerHTML = '<span class="mic-icon">🎤</span> Tap to try again';
+      }
+    );
+  }, 1200);
+}
+
+// ── Check if both are set → fetch route ───────────────────
+async function checkBothSet() {
+  if (!selectedSource || !selectedDest) return;
+
+  document.getElementById('startBtn').style.display = 'block';
+
+  // Auto fetch route preview
+  try {
+    const res  = await fetch(`${API_URL}/route`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ start_id: selectedSource.id, destination_id: selectedDest.id })
+    });
+    const data = await res.json();
+    if (data.route_display && data.route_display.length > 0) {
+      routeData = data;
+      showRoutePreview(data);
+      speakForce('Route found. ' + data.hops + ' stops. Tap Start Navigation when ready.');
+    }
+  } catch(e) { console.error(e); }
+}
+
+// ── Route preview ──────────────────────────────────────────
+function showRoutePreview(data) {
+  const preview = document.getElementById('routePreview');
+  const title   = document.getElementById('routeTitle');
+  const stops   = document.getElementById('routeStops');
+  title.textContent = '📍 Route — ' + data.hops + ' stops';
+  stops.innerHTML = '';
+  data.route_display.forEach((cp, i) => {
+    const div = document.createElement('div');
+    div.className = 'route-stop' + (i===0?' first': i===data.route_display.length-1?' last':'');
+    const dot = i===0?'🟢': i===data.route_display.length-1?'🔴':'⚪';
+    div.textContent = dot + ' ' + cp.name;
+    stops.appendChild(div);
+  });
+  preview.style.display = 'block';
+}
+
+// ── Confirm and start navigation ──────────────────────────
+async function confirmAndStart() {
+  if (!routeData) return;
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('routePreview').style.display = 'none';
+
+  // Update checkpoint strip
+  updateCheckpointStrip(routeData.route_display);
+
+  speakForce('Starting navigation. Follow the yellow path.');
+
+  // Wait 1 second then reveal camera
+  await new Promise(r => setTimeout(r, 1000));
+
+  document.getElementById('setupScreen').style.display  = 'none';
+  document.getElementById('checkpointStrip').style.display = 'flex';
+  document.getElementById('cameraWrap').style.display   = 'block';
+  document.getElementById('deviationWrap').style.display = 'block';
+  document.getElementById('navPanel').style.display     = 'flex';
+
+  await startCamera();
+  startLocationPolling();
+}
+
+// ── Checkpoint strip ───────────────────────────────────────
+function updateCheckpointStrip(route) {
+  const strip = document.getElementById('checkpointStrip');
+  strip.innerHTML = '';
+  route.forEach(cp => {
+    const btn = document.createElement('span');
+    btn.textContent = cp.name;
+    btn.className   = 'cp-btn cp-' + cp.status;
+    strip.appendChild(btn);
+  });
+}
+
+// ── Deviation bar ──────────────────────────────────────────
+function updateDeviationBar(deviation) {
+  const abs = Math.abs(deviation);
+  let color = '#22c55e';
+  if (abs > 0.5) color = '#ef4444';
+  else if (abs > 0.25) color = '#f97316';
+  else if (abs > 0.1)  color = '#facc15';
+  deviationFill.style.background = color;
+  if (deviation < 0) {
+    deviationFill.style.left  = `${50 - abs*50}%`;
+    deviationFill.style.width = `${abs*50}%`;
+  } else {
+    deviationFill.style.left  = '50%';
+    deviationFill.style.width = `${abs*50}%`;
+  }
+  deviationVal.textContent = deviation.toFixed(3);
+}
+
+// ── Handle detect response ─────────────────────────────────
+function handleResponse(data) {
+  const instruction = data.instruction || 'Continue Straight';
+  const deviation   = data.deviation   || 0;
+  const vib         = data.vibration   || 0;
+  const laneOk      = data.lane_detected !== false;
+  const willBlock   = data.will_block  || false;
+
+  instrEl.textContent = instruction;
+  if (!laneOk)              instrEl.style.color = '#ef4444';
+  else if (willBlock)       instrEl.style.color = '#f97316';
+  else if (Math.abs(deviation) > 0.5) instrEl.style.color = '#f97316';
+  else if (Math.abs(deviation) > 0.2) instrEl.style.color = '#facc15';
+  else                      instrEl.style.color = '#22c55e';
+
+  updateDeviationBar(deviation);
+
+  if (willBlock && data.object_instruction) {
+    speakForce(data.object_instruction);
+  } else if (shouldAnnounce(instruction)) {
+    speak(instruction);
+  }
+
+  vibrate(vib, laneOk, willBlock);
+}
+
+// ── Camera ─────────────────────────────────────────────────
+async function startCamera() {
+  if (capturing) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode:'environment', width:{ideal:1280}, height:{ideal:720} }
+    });
+    video.srcObject = stream;
+    await video.play();
+    instrEl.textContent = 'Camera ready';
+    startCapture();
+  } catch(e) {
+    instrEl.textContent = 'Camera error: ' + e.message;
+    instrEl.style.color = '#ef4444';
+  }
+}
+
+function startCapture() {
+  if (capturing) return;
+  capturing = true;
+  setInterval(async () => {
+    if (video.readyState < 4) return;
+    if (video.videoWidth === 0 || video.videoHeight === 0) return;
+    const now = Date.now();
+    fpsEl.textContent = Math.round(1000/(now-lastFrameTime)) + ' FPS';
+    lastFrameTime = now;
+
+    canvas.width  = video.videoWidth;
+    canvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    const dataURL = canvas.toDataURL('image/jpeg', 0.7);
+    if (!dataURL || dataURL === 'data:,') return;
+    const b64 = dataURL.split(',')[1];
+    if (!b64 || b64.length < 100) return;
+
+    try {
+      const res  = await fetch(`${API_URL}/detect`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ image:b64, frame_id:frameId++, segment:'campus', mode:'path' })
+      });
+      const data = await res.json();
+      if (data.error) { console.error(data.error); return; }
+      handleResponse(data);
+    } catch(e) {
+      instrEl.textContent = 'Backend unreachable';
+      instrEl.style.color = '#ef4444';
+    }
+  }, INTERVAL);
+}
+
+// ── Device compass ────────────────────────────────────────
+let hasAbsoluteOrientation = false;
+
+window.addEventListener('deviceorientationabsolute', (e) => {
+  if (e.alpha !== null && e.alpha !== undefined) {
+    hasAbsoluteOrientation = true;
+    // For Android, absolute alpha is mathematically 360 - bearing
+    deviceBearing = (360 - e.alpha) % 360;
+    updateCompassArrow();
+  }
+}, true);
+
+window.addEventListener('deviceorientation', (e) => {
+  if (e.webkitCompassHeading !== undefined) {
+    // iOS Safari exposes absolute bearing natively here
+    hasAbsoluteOrientation = true;
+    deviceBearing = e.webkitCompassHeading;
+    updateCompassArrow();
+  } else if (!hasAbsoluteOrientation && e.alpha !== null) {
+    // Relative fallback (useless for absolute nav, but keeps arrow spinning)
+    deviceBearing = (360 - e.alpha) % 360;
+    updateCompassArrow();
+  }
+}, true);
+
+function updateCompassArrow() {
+  // Arrow should point FROM user TO checkpoint
+  // relative to phone's current heading
+  const relBearing = (targetBearing - deviceBearing + 360) % 360;
+  const arrow = document.getElementById('compassArrow');
+  if (arrow) arrow.style.transform = `rotate(${relBearing}deg)`;
+
+  const debug = document.getElementById('debugBearing');
+  if (debug) debug.textContent = `P:${Math.round(deviceBearing)}° T:${Math.round(targetBearing)}°`;
+}
+
+function updateNavPanel(data) {
+  if (!data.bearing_to_next && data.bearing_to_next !== 0) return;
+  targetBearing = data.bearing_to_next;
+  distToNext    = data.distance_to_next || 0;
+
+  // Distance display
+  const distEl  = document.getElementById('distanceText');
+  const unitEl  = document.getElementById('distanceUnit');
+  if (distEl) {
+    if (distToNext < 1000) {
+      distEl.textContent = Math.round(distToNext);
+      if (unitEl) unitEl.textContent = 'metres away';
+    } else {
+      distEl.textContent = (distToNext / 1000).toFixed(1);
+      if (unitEl) unitEl.textContent = 'km away';
+    }
+  }
+
+  // Next checkpoint name
+  const nameEl = document.getElementById('nextCpName');
+  if (nameEl && data.next_checkpoint) {
+    nameEl.textContent = data.next_checkpoint.name;
+  }
+
+  updateCompassArrow();
+}
+
+// ── GPS polling ────────────────────────────────────────────
+function startLocationPolling() {
+  if (locationWatchId !== null || !navigator.geolocation) return;
+  locationWatchId = navigator.geolocation.watchPosition(
+    async pos => {
+      try {
+        const res  = await fetch(`${API_URL}/location`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ lat:pos.coords.latitude, lng:pos.coords.longitude })
+        });
+        const data = await res.json();
+        if (data.route) updateCheckpointStrip(data.route);
+        updateNavPanel(data);
+        if (data.checkpoint_reached && data.next_checkpoint)
+          speak('Heading to ' + data.next_checkpoint.name + ', ' + Math.round(data.distance_to_next) + ' metres');
+        if (data.destination_reached) {
+          speakForce('You have reached your destination.');
+          document.getElementById('navPanel').style.display = 'none';
+          navigator.geolocation.clearWatch(locationWatchId);
+          locationWatchId = null;
+        }
+      } catch(e) {}
+    },
+    () => {},  // error handler — silently ignore
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+  );
+}
+
+// ── Backend URL detection ──────────────────────────────────
+async function detectBackendURL() {
+  try {
+    const r = await fetch('http://localhost:8000/health', {signal:AbortSignal.timeout(2000)});
+    if (r.ok) { API_URL = 'http://localhost:8000'; return true; }
+  } catch(e) {}
+  const url = prompt('Backend not found on localhost.\n\nPaste your Cloudflare backend URL:\n(Tab 3 — https://xxxx.trycloudflare.com)');
+  if (url && url.startsWith('https://')) {
+    API_URL = url.trim().replace(/\/$/,'');
+    try {
+      const r = await fetch(`${API_URL}/health`, {signal:AbortSignal.timeout(5000)});
+      if (r.ok) return true;
+    } catch(e) {}
+  }
+  return false;
+}
+
+// ── Hardcoded checkpoints — never depends on API ──────────
+const ALL_CHECKPOINTS = [
+  {id:"H4",name:"Hostel H4",type:"major"},{id:"H5",name:"Hostel H5",type:"major"},
+  {id:"H6",name:"Hostel H6",type:"major"},{id:"H7",name:"Hostel H7",type:"major"},
+  {id:"H8",name:"Hostel H8",type:"major"},{id:"H10",name:"Hostel H10",type:"major"},
+  {id:"H123_a",name:"Hostel H1 H2 H3",type:"major"},
+  {id:"VINODANI",name:"Vinodani Hostel",type:"major"},
+  {id:"AUROBINDO",name:"Aurobindo Hostel",type:"major"},
+  {id:"GARGI",name:"Gargi Hostel",type:"major"},
+  {id:"VLTC",name:"VLTC Lecture Theatre",type:"major"},
+  {id:"DISPENSARY",name:"Dispensary",type:"major"},
+  {id:"PRABHA",name:"Prabha Bhawan",type:"major"},
+  {id:"MAINGATE",name:"Main Gate",type:"major"},
+  {id:"PMC_C",name:"PMC Shop",type:"major"},
+  {id:"CP0",name:"Turn CP0",type:"turn"},
+  {id:"CP1",name:"CP1",type:"turn"},
+  {id:"CP2",name:"CP2",type:"turn"},
+  {id:"CP3",name:"CP3",type:"turn"},
+  {id:"CP4",name:"CP4",type:"crossing_up"},
+  {id:"CP5",name:"CP5",type:"crossing_down"},
+  {id:"CP6_a",name:"CP6 Up",type:"crossing_up"},
+  {id:"CP6_b",name:"CP6 Down",type:"crossing_down"},
+  {id:"CP7_a",name:"CP7 Up",type:"crossing_up"},
+  {id:"CP7_b",name:"CP7 Down",type:"crossing_down"},
+  {id:"CP8_a",name:"CP8 Up",type:"crossing_up"},
+  {id:"CP8_b",name:"CP8 Down",type:"crossing_down"},
+  {id:"CP9",name:"CP9",type:"crossing_up"},
+  {id:"CP10_a",name:"CP10",type:"crossing_up"},
+  {id:"CP10_b",name:"CP10 B",type:"crossing_down"},
+  {id:"CPV",name:"CPV",type:"crossing_up"},
+  {id:"CP11_a",name:"CP11 Up",type:"crossing_up"},
+  {id:"CP11_b",name:"CP11 Down",type:"crossing_down"},
+  {id:"PMC_a",name:"PMC Up",type:"crossing_up"},
+  {id:"PMC_b",name:"PMC Down",type:"crossing_down"},
+  {id:"CP12_a",name:"CP12",type:"crossing_up"},
+  {id:"CP12_b",name:"CP12 B",type:"crossing_down"},
+  {id:"CP12_c",name:"CP12 C",type:"crossing_up"},
+  {id:"CP12_d",name:"CP12 D",type:"crossing_down"},
+  {id:"CP13_a",name:"CP13 Up",type:"crossing_up"},
+  {id:"CP13_b",name:"CP13 Down",type:"crossing_down"},
+  {id:"CPPBA",name:"CPPB Up",type:"crossing_up"},
+  {id:"CPPBB",name:"CPPB Down",type:"crossing_down"},
+];
+
+const MAJOR_CHECKPOINTS = ALL_CHECKPOINTS.filter(cp => cp.type === 'major');
+
+// ── Boot ───────────────────────────────────────────────────
+(async () => {
+  // Always set checkpoints from hardcoded list — no API dependency
+  allCheckpoints = ALL_CHECKPOINTS;
+  destinations   = MAJOR_CHECKPOINTS;
+
+  console.log('Checkpoints loaded (hardcoded):', allCheckpoints.length);
+  console.log('Destinations:', destinations.map(d => d.id));
+
+  // Try to connect backend
+  const ok = await detectBackendURL();
+  if (!ok) {
+    document.getElementById('srcDisplay').textContent = 'Backend unreachable — check server';
+    document.getElementById('dstDisplay').textContent = 'Cannot start without backend';
+    return;
+  }
+
+  speakForce('Welcome to SecondSight. Tap the microphone to say your current location.');
+})();
+</script>
+</body>
+</html>
