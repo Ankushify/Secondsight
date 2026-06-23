@@ -16,7 +16,7 @@ SecondSight is an intelligent, real-time navigation assistant designed to guide 
 
 *   **Lane & Path Detection**: Uses OpenCV (HSV color thresholding and perspective warping) combined with **Artificial Potential Fields (APF)** to calculate path deviation and keep the user centered on the path.
 *   **Intelligent Obstacle Avoidance**: Utilizes **YOLOv8** (Nano) to detect objects (people, vehicles, obstacles) and predicts potential collisions using a **Kalman Filter tracker**.
-*   **Smart GPS Checkpoint Navigation**: Implements **Dijkstra's Algorithm** to calculate the shortest path through a pre-mapped campus checkpoint graph.
+*   **Smart GPS Checkpoint Navigation**: Implements **Bi-directional BFS** to calculate the shortest path through a pre-mapped campus checkpoint graph.
 *   **Multimodal Feedback**:
     *   **Text-to-Speech (TTS)**: Verbal navigation prompts and obstacle warnings.
     *   **Haptic Patterns**: Vibration intervals that change based on path deviation and blockage severity.
@@ -31,7 +31,7 @@ SecondSight is an intelligent, real-time navigation assistant designed to guide 
 *   `index.html`: The HTML5/JavaScript frontend dashboard that handles camera access, GPS/compass polling, speech recognition, and haptic vibration.
 *   `lane_detection.py`: Computer vision logic for path thresholding, warping, histogram analysis, and APF deviation calculations.
 *   `object_detection.py`: YOLOv8 detection, Kalman Filter multi-object tracking, and intersection prediction.
-*   `checkpoint_navigator.py`: Shortest-path routing (Dijkstra), GPS coordinate distance calculation (Haversine), and checkpoint matching.
+*   `checkpoint_navigator.py`: Shortest-path routing (Bi-directional BFS), GPS coordinate distance calculation (Haversine), and checkpoint matching.
 *   `logger.py`: CSV logging utilities for metrics collection.
 *   `tts.py`: Python Text-to-Speech (`pyttsx3`) and speech-to-text recognition modules.
 *   `extra_module.py`: Helper functions for image processing tasks.
